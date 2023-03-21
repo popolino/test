@@ -1,12 +1,15 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "../../app/hooks";
-import { setText } from "./Todo.slice";
-import { TodoMocks } from "./todo.mocks";
+import { addTodo, createTodo, fetchTodos, setText } from "./Todo.slice";
 
 const Todo = () => {
-  const text = useAppSelector((state) => state.todo.text);
+  const { text, todos } = useAppSelector((state) => state.todo);
   const dispatch = useAppDispatch();
   const handleChangeText = (text: string) => dispatch(setText(text));
+  const handleCreateTodo = () => dispatch(addTodo());
+  useEffect(() => {
+    fetchTodos();
+  }, []);
   return (
     <>
       <div>
@@ -15,11 +18,10 @@ const Todo = () => {
           value={text}
           onChange={(event) => handleChangeText(event.target.value)}
         />
-        <button>Add</button>
+        <button onClick={handleCreateTodo}>Add</button>
       </div>
       <ul>
-        <li>ccc</li>
-        {TodoMocks.map((todo) => (
+        {todos.map((todo) => (
           <li key={todo.id} className={todo.completed ? "completed" : ""}>
             {todo.title}
           </li>
