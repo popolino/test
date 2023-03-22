@@ -3,12 +3,14 @@ import { useAppDispatch, useAppSelector } from "../../app/hooks";
 import { addTodo, createTodo, fetchTodos, setText } from "./Todo.slice";
 
 const Todo = () => {
-  const { text, todos } = useAppSelector((state) => state.todo);
+  const { text, todos, fetchingStatus, errorMessage } = useAppSelector(
+    (state) => state.todo
+  );
   const dispatch = useAppDispatch();
   const handleChangeText = (text: string) => dispatch(setText(text));
   const handleCreateTodo = () => dispatch(addTodo());
   useEffect(() => {
-    fetchTodos();
+    dispatch(fetchTodos());
   }, []);
   return (
     <>
@@ -20,13 +22,17 @@ const Todo = () => {
         />
         <button onClick={handleCreateTodo}>Add</button>
       </div>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id} className={todo.completed ? "completed" : ""}>
-            {todo.title}
-          </li>
-        ))}
-      </ul>
+      {fetchingStatus === "idle" && (
+        <ul>
+          {todos.map((todo) => (
+            <li key={todo.id} className={todo.completed ? "completed" : ""}>
+              {todo.title}
+            </li>
+          ))}
+        </ul>
+      )}
+      {fetchingStatus === "loading" && <div>Loading...</div>}
+      {fetchingStatus === "failed" && <div>{errorMessage}</div>}
     </>
   );
 };

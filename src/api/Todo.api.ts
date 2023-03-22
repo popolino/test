@@ -1,11 +1,6 @@
 import axios from "./index";
+import { TTodo } from "../features/todo/todo.types";
 
 export const todoApi = {
-  getTodos: () => axios.get("todos"),
+  getTodos: () => axios.get<TTodo[]>("tods"),
 };
-
-// export const todoApi = {
-//  getTodos(){
-//   return  axios.get('todos').then((response)=> response.data)
-// }
-// }

@@ -8,12 +8,14 @@ export interface TodoState {
   todos: TTodo[];
   text: string;
   fetchingStatus: "idle" | "loading" | "failed";
+  errorMessage: string | undefined;
 }
 
 const initialState: TodoState = {
-  todos: TodoMocks,
+  todos: [],
   text: "",
   fetchingStatus: "idle",
+  errorMessage: undefined,
 };
 
 export const todoSlice = createSlice({
@@ -26,6 +28,19 @@ export const todoSlice = createSlice({
     createTodo: (state, action: PayloadAction<TTodo>) => {
       state.todos.push(action.payload);
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(fetchTodos.pending, (state) => {
+      state.fetchingStatus = "loading";
+    });
+    builder.addCase(fetchTodos.fulfilled, (state, { payload }) => {
+      state.todos = payload;
+      state.fetchingStatus = "idle";
+    });
+    builder.addCase(fetchTodos.rejected, (state, { payload }) => {
+      state.fetchingStatus = "failed";
+      state.errorMessage = payload;
+    });
   },
 });
 
@@ -40,14 +55,18 @@ export const addTodo = (): AppThunk => (dispatch, getState) => {
   );
   dispatch(setText(""));
 };
-export const fetchTodos = createAsyncThunk(
-  "todo/fetchTodos",
-  async (_, thunkAPI) => {
-    console.log("sfsdv");
-    const result = await todoApi.getTodos();
-    console.log(result);
+export const fetchTodos = createAsyncThunk<
+  TTodo[],
+  void,
+  { rejectValue: string }
+>("todo/fetchTodos", async (_, { rejectWithValue }) => {
+  try {
+    const { data } = await todoApi.getTodos();
+    return data;
+  } catch (e: any) {
+    return rejectWithValue(e.message);
   }
-);
+});
 
 export const { setText, createTodo } = todoSlice.actions;
 
