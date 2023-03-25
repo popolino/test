@@ -1,196 +1,211 @@
-import { ICreateTodoRequest, IEditTodoRequest, TTodo } from "./todo.types";
+import { TTodo } from "./todo.types";
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
-import { AppThunk } from "../../app/store";
-import { todoApi } from "../../api/Todo.api";
+import { RootState } from "../../app/store";
+import { todoApi } from "../../api/todoApi/todo.api";
+import {
+  isFulfilledAction,
+  isPendingAction,
+  isRejectedAction,
+} from "../../utils";
 
 export interface TodoState {
   todos: TTodo[];
-  text: string;
-  fetchingStatus: "idle" | "loading" | "failed"; //status: переименовать в статусс
-  mutatingStatus: "idle" | "loading" | "failed"; //mutatingProtress : boolean (сделаььб так началник сказал)
-  errorMessage?: string;
-  editText: string;
-  showInput: boolean;
-  deletingProgress: number[];
+  newTodoText: string;
+  editTodoText: string;
+  status: "idle" | "loading" | "failed";
+  message: any;
+  editable: TTodo | null;
+  meta: {
+    fetching: boolean;
+    creating: boolean;
+    updating: boolean;
+    deleting: number[];
+  };
 }
 
 const initialState: TodoState = {
   todos: [],
-  text: "",
-  fetchingStatus: "idle",
-  mutatingStatus: "idle",
-  editText: "",
-  showInput: false,
-  deletingProgress: [],
+  newTodoText: "",
+  editTodoText: "",
+  status: "idle",
+  editable: null,
+  message: "",
+  meta: {
+    fetching: false,
+    creating: false,
+    updating: false,
+    deleting: [],
+  },
 };
 
 export const todoSlice = createSlice({
   name: "todo",
   initialState,
   reducers: {
-    setText: (state, action: PayloadAction<string>) => {
-      state.text = action.payload;
+    setNewTodoText: (state, action: PayloadAction<string>) => {
+      state.newTodoText = action.payload;
     },
-    createTodo: (state, action: PayloadAction<TTodo>) => {
-      state.todos.push(action.payload);
+    setEditTodoText: (state, action: PayloadAction<string>) => {
+      state.editTodoText = action.payload;
     },
-    setEditText: (state, action: PayloadAction<string>) => {
-      state.editText = action.payload;
+    setEditable: (state, action: PayloadAction<TTodo | null>) => {
+      if (state.editable?.id === action.payload?.id) return;
+      state.editable = action.payload;
+      state.editTodoText = action.payload?.title || "";
     },
-    editTodo: (
-      state,
-      action: PayloadAction<{ id: number; completed?: boolean }>
-    ) => {
-      state.todos.map((todo) => {
-        if (todo.id === action.payload.id) {
-          const newTodo = todo;
-          if (!state.editText) newTodo.title = state.editText;
-          if (action.payload.completed)
-            newTodo.completed = action.payload.completed;
-          return newTodo;
-        } else return todo;
-      });
+    editTodo: (state, action: PayloadAction<TTodo>) => {
+      state.todos = state.todos.map((todo) =>
+        action.payload.id === todo.id ? action.payload : todo
+      );
     },
-    setShowInput: (state, action: PayloadAction<boolean>) => {
-      state.showInput = action.payload;
-    },
-    deleteTodo: (state, action: PayloadAction<number>) => {
-      state.todos = state.todos.filter((todo) => todo.id !== action.payload);
-    },
-    toggleDeleteProgress: (state, action: PayloadAction<number>) => {
-      if (state.deletingProgress.includes(action.payload))
-        state.deletingProgress = state.deletingProgress.filter(
+    toggleDeleting: (state, action: PayloadAction<number>) => {
+      if (state.meta.deleting.includes(action.payload))
+        state.meta.deleting = state.meta.deleting.filter(
           (id) => id !== action.payload
         );
-      else state.deletingProgress.push(action.payload);
+      else state.meta.deleting.push(action.payload);
     },
   },
   extraReducers: (builder) => {
+    // FETCH
+
     builder.addCase(fetchTodos.pending, (state) => {
-      state.fetchingStatus = "loading";
+      state.meta.fetching = true;
     });
     builder.addCase(fetchTodos.fulfilled, (state, { payload }) => {
+      state.meta.fetching = false;
       state.todos = payload;
-      state.fetchingStatus = "idle";
     });
-    builder.addCase(fetchTodos.rejected, (state, { payload }) => {
-      state.fetchingStatus = "failed";
-      state.errorMessage = payload;
+    builder.addCase(fetchTodos.rejected, (state) => {
+      state.meta.fetching = false;
     });
 
-    builder.addCase(postTodo.pending, (state) => {
-      state.mutatingStatus = "loading";
+    // ADD
+
+    builder.addCase(addTodoAsync.pending, (state) => {
+      state.meta.creating = true;
     });
-    builder.addCase(postTodo.fulfilled, (state) => {
-      state.mutatingStatus = "idle";
+    builder.addCase(addTodoAsync.fulfilled, (state, { payload }) => {
+      state.meta.creating = false;
+      state.todos.push(payload);
+      state.newTodoText = "";
     });
-    builder.addCase(postTodo.rejected, (state, { payload }) => {
-      state.mutatingStatus = "failed";
-      state.errorMessage = payload;
+    builder.addCase(addTodoAsync.rejected, (state) => {
+      state.meta.creating = false;
     });
 
-    builder.addCase(patchTodo.pending, (state) => {
-      state.mutatingStatus = "loading";
+    // EDIT
+
+    builder.addCase(editTodoAsync.pending, (state) => {
+      state.meta.updating = true;
     });
-    builder.addCase(patchTodo.fulfilled, (state) => {
-      state.mutatingStatus = "idle";
+    builder.addCase(editTodoAsync.fulfilled, (state, { payload }) => {
+      state.meta.updating = false;
+      state.todos = state.todos.map((todo) =>
+        payload.id === todo.id ? payload : todo
+      );
+      state.editTodoText = "";
+      state.editable = null;
     });
-    builder.addCase(patchTodo.rejected, (state, { payload }) => {
-      state.mutatingStatus = "failed";
-      state.errorMessage = payload;
+    builder.addCase(editTodoAsync.rejected, (state) => {
+      state.meta.updating = false;
     });
 
-    builder.addCase(removeTodo.fulfilled, (state) => {
-      state.mutatingStatus = "idle";
+    // DELETE
+
+    builder.addCase(deleteTodoAsync.fulfilled, (state, { payload }) => {
+      const todoTitle = state.todos.find((todo) => todo.id === payload)?.title;
+      state.todos = state.todos.filter((todo) => todo.id !== payload);
+      if(!todoTitle) return
+      state.message = `Задание ${todoTitle} удалено`
     });
-    builder.addCase(removeTodo.rejected, (state, { payload }) => {
-      state.mutatingStatus = "failed";
-      state.errorMessage = payload;
+
+    builder.addMatcher(isPendingAction, (state) => {
+      state.status = "loading";
+      state.message = "";
+    });
+    builder.addMatcher(isFulfilledAction, (state) => {
+      state.status = "idle";
+    });
+    builder.addMatcher(isRejectedAction, (state, { payload }) => {
+      state.status = "failed";
+      if (!payload) return;
+      state.message = payload;
     });
   },
 });
 
-export const addTodo = (): AppThunk => async (dispatch, getState) => {
-  const todoDTO = { userId: 1, title: getState().todo.text, completed: false };
-  const todo = await dispatch(postTodo(todoDTO)).unwrap();
-  dispatch(createTodo(todo));
-  dispatch(setText(""));
-};
-
-export const updateTodo =
-  (id: number, completed?: boolean): AppThunk =>
-  async (dispatch, getState) => {
-    const title = getState().todo.editText;
-    const todoDTO = title ? { id, title, completed } : { id, completed };
-    await dispatch(patchTodo(todoDTO));
-
-    dispatch(editTodo({ id, completed }));
-    dispatch(setShowInput(false));
-  };
-export const cutTodo =
-  (id: number): AppThunk =>
-  async (dispatch, getState) => {
-    dispatch(toggleDeleteProgress(id));
-    await dispatch(removeTodo(id));
-    dispatch(deleteTodo(id));
-    dispatch(toggleDeleteProgress(id));
-  };
-
-export const postTodo = createAsyncThunk<
-  TTodo,
-  ICreateTodoRequest,
-  { rejectValue: string }
->("todo/postTodo", async (todo, { rejectWithValue }) => {
-  try {
-    const { data } = await todoApi.addTodo(todo);
-    return data;
-  } catch (e: any) {
-    return rejectWithValue(e.message);
+export const fetchTodos = createAsyncThunk(
+  "todoApi/fetchTodos",
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data } = await todoApi.getTodos();
+      return data;
+    } catch (e: any) {
+      return rejectWithValue(e.message);
+    }
   }
-});
-export const fetchTodos = createAsyncThunk<
-  TTodo[],
-  void,
-  { rejectValue: string }
->("todo/fetchTodos", async (_, { rejectWithValue }) => {
-  try {
-    const { data } = await todoApi.getTodos();
-    return data;
-  } catch (e: any) {
-    return rejectWithValue(e.message);
-  }
-});
-export const patchTodo = createAsyncThunk<
-  TTodo,
-  IEditTodoRequest,
-  { rejectValue: string }
->("todo/patchTodo", async (todo, { rejectWithValue }) => {
-  try {
-    const { data } = await todoApi.editTodo(todo);
-    return data;
-  } catch (e: any) {
-    return rejectWithValue(e.message);
-  }
-});
-export const removeTodo = createAsyncThunk<
-  undefined,
-  number,
-  { rejectValue: string }
->("todo/removeTodo", async (id, { rejectWithValue }) => {
-  try {
-    await todoApi.deleteTodo(id);
-  } catch (e: any) {
-    return rejectWithValue(e.message);
-  }
-});
-export const {
-  setText,
-  createTodo,
-  setEditText,
-  editTodo,
-  setShowInput,
-  deleteTodo,
-  toggleDeleteProgress,
-} = todoSlice.actions;
+);
 
-export default todoSlice.reducer;
+export const deleteTodoAsync = createAsyncThunk(
+  "todoApi/deleteTodoAsync",
+  async (id: number, { rejectWithValue, dispatch }) => {
+    dispatch(todoActions.toggleDeleting(id));
+    try {
+      await todoApi.deleteTodo(id);
+      dispatch(todoActions.toggleDeleting(id));
+      return id;
+    } catch (e: any) {
+      dispatch(todoActions.toggleDeleting(id));
+      return rejectWithValue(e.message);
+    }
+  }
+);
+
+export const editTodoAsync = createAsyncThunk(
+  "todoApi/editTodoAsync",
+  async (todo: TTodo, { rejectWithValue }) => {
+    try {
+      const { data } = await todoApi.editTodo(todo);
+      return data;
+    } catch (e: any) {
+      return rejectWithValue(e.message);
+    }
+  }
+);
+export const optimisticEditTodoAsync = createAsyncThunk(
+  "todoApi/optimisticEditTodoAsync",
+  async (todo: TTodo, { rejectWithValue, getState, dispatch }) => {
+    const globalState = getState() as RootState;
+    const oldTodo = globalState.todo.todos.find((t) => t.id === todo.id);
+    if (!oldTodo) return;
+    dispatch(todoActions.editTodo(todo));
+    try {
+      await todoApi.editTodo(todo);
+      return todo;
+    } catch (e: any) {
+      dispatch(todoActions.editTodo(oldTodo));
+      return rejectWithValue(e.message);
+    }
+  }
+);
+
+export const addTodoAsync = createAsyncThunk(
+  "todoApi/addTodoAsync",
+  async (_, { rejectWithValue, getState }) => {
+    const globalState = getState() as RootState;
+    try {
+      const todo = {
+        userId: 1,
+        title: globalState.todo.newTodoText,
+        completed: false,
+      };
+      const { data } = await todoApi.addTodo(todo);
+      return data;
+    } catch (e: any) {
+      return rejectWithValue(e.message);
+    }
+  }
+);
+
+export const { reducer: todoReducer, actions: todoActions } = todoSlice;

@@ -1,0 +1,1 @@
+import {TTodo} from "../../features/todo/todo.types";export interface ITodoResponse extends TTodo {}

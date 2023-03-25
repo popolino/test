@@ -1,106 +1,122 @@
-import React, { useEffect, useState } from "react";
-import { useAppDispatch, useAppSelector } from "../../app/hooks";
+import React, { useEffect } from "react";
+import { useAppSelector } from "../../app/hooks";
 import {
-  addTodo,
-  createTodo,
-  cutTodo,
-  deleteTodo,
-  editTodo,
+  addTodoAsync,
+  editTodoAsync,
   fetchTodos,
-  setEditText,
-  setShowInput,
-  setText,
-  updateTodo,
+  optimisticEditTodoAsync,
+  todoActions,
+  deleteTodoAsync,
 } from "./Todo.slice";
+import { TTodo } from "./todo.types";
+import { useActionCreators } from "../../app/store";
+import { useSnackbar } from "notistack";
+
+const allActions = {
+  ...todoActions,
+  deleteTodoAsync,
+  fetchTodos,
+  addTodoAsync,
+  editTodoAsync,
+  optimisticEditTodoAsync,
+};
 
 const Todo = () => {
-  const {
-    text,
-    todos,
-    fetchingStatus,
-    errorMessage,
-    mutatingStatus,
-    editText,
-    showInput,
-    deletingProgress,
-  } = useAppSelector((state) => state.todo);
-  const dispatch = useAppDispatch();
+  const actions = useActionCreators(allActions);
 
-  // const [showInput, setShowInput] = useState(false);
-  const [currentActive, setCurrentActive] = useState<number>();
-  const handleShowInput = (showInput: boolean) =>
-    dispatch(setShowInput(showInput));
-  const handleClickTodo = (id: number, title: string) => {
-    handleChangeEditText(title);
-    setCurrentActive(id);
-    handleShowInput(currentActive !== id);
-  };
-  const handleEditTodo = (id: number, completed?: boolean) => {
-    dispatch(updateTodo(id, completed));
-  };
-  const handleChangeEditText = (text: string) => dispatch(setEditText(text));
-  const handleChangeText = (text: string) => dispatch(setText(text));
-  const handleCreateTodo = () => dispatch(addTodo());
-  const handleDeleteTodo = (id: number) => dispatch(cutTodo(id));
+  const newTodoText = useAppSelector((state) => state.todo.newTodoText);
+  const editable = useAppSelector((state) => state.todo.editable);
+  const editTodoText = useAppSelector((state) => state.todo.editTodoText);
+  const todos = useAppSelector((state) => state.todo.todos);
+  const status = useAppSelector((state) => state.todo.status);
+  const message = useAppSelector((state) => state.todo.message);
+  const fetching = useAppSelector((state) => state.todo.meta.fetching);
+  const creating = useAppSelector((state) => state.todo.meta.creating);
+  const updating = useAppSelector((state) => state.todo.meta.updating);
+  const deleting = useAppSelector((state) => state.todo.meta.deleting);
+
+  const { enqueueSnackbar } = useSnackbar();
+
+  const handleChangeNewTodoText = (text: string) =>
+    actions.setNewTodoText(text);
+  const handleChangeEditTodoText = (text: string) =>
+    actions.setEditTodoText(text);
+  const handleCreateTodo = () => actions.addTodoAsync();
+  const handleEditTodo = () =>
+    editable && actions.editTodoAsync({ ...editable, title: editTodoText });
+  const handleChangeTodoCompleted = (todo: TTodo) =>
+    actions.optimisticEditTodoAsync({ ...todo, completed: !todo.completed });
+  const handleSetEditable = (todo: TTodo) => actions.setEditable(todo);
+  const handleDeleteTodo = (id: number) => actions.deleteTodoAsync(id);
 
   useEffect(() => {
-    dispatch(fetchTodos());
+    message &&
+      enqueueSnackbar(message, {
+        variant: status === "failed" ? "error" : "info",
+      });
+  }, [message]);
+
+  useEffect(() => {
+    actions.fetchTodos();
   }, []);
   return (
-    <>
+    <div className="wrapper">
       <div>
         <input
-          type="text"
-          value={text}
-          onChange={(event) => handleChangeText(event.target.value)}
+          type="newTodoText"
+          value={newTodoText}
+          onChange={(event) => handleChangeNewTodoText(event.target.value)}
         />
-        <button onClick={handleCreateTodo}>
-          {mutatingStatus === "loading" ? "..." : "Add"}
+        <button onClick={handleCreateTodo} disabled={creating}>
+          {!creating ? "Add" : "* * *"}
         </button>
       </div>
-      {errorMessage && <div>{errorMessage}</div>}
-      {fetchingStatus === "idle" && (
-        <ul>
-          {todos.map((todo) => (
-            <li key={todo.id}>
-              <div style={{ display: "flex", gap: "20px" }}>
-                <input
-                  type="checkbox"
-                  checked={todo.completed}
-                  onChange={() => handleEditTodo(todo.id, !todo.completed)}
-                />
-                <div
-                  onClick={() => handleClickTodo(todo.id, todo.title)}
-                  className={todo.completed ? "completed" : ""}
-                >
-                  {todo.title}
-                </div>
-                <button onClick={() => handleDeleteTodo(todo.id)}>
-                  {deletingProgress.some((id) => id === todo.id)
-                    ? "..."
-                    : "Delete"}
-                </button>
-              </div>
-              {showInput && currentActive === todo.id && (
+
+      <ul>
+        {fetching ? (
+          <div className="loading">loading...</div>
+        ) : (
+          todos.map((todo) => (
+            <li key={todo.id} className={todo.completed ? "completed" : ""}>
+              <div className="todo">
                 <div>
                   <input
-                    type="text"
-                    value={editText}
-                    onChange={(event) =>
-                      handleChangeEditText(event.target.value)
-                    }
+                    type="checkbox"
+                    checked={todo.completed}
+                    onChange={() => handleChangeTodoCompleted(todo)}
                   />
-                  <button onClick={() => handleEditTodo(todo.id)}>
-                    {mutatingStatus === "loading" ? "..." : "Edit"}
-                  </button>
+                  {editable?.id !== todo.id ? (
+                    <div onClick={() => handleSetEditable(todo)}>
+                      <p>{todo.title}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        type="text"
+                        value={editTodoText}
+                        onChange={(event) =>
+                          handleChangeEditTodoText(event.target.value)
+                        }
+                      />
+                      <button
+                        onClick={() => handleEditTodo()}
+                        disabled={updating}
+                        className={updating ? "loading" : ""}
+                      >
+                        {updating ? "* * *" : "save"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
+                <button onClick={() => handleDeleteTodo(todo.id)}>{deleting.some(id => id === todo.id) ? '* * *' : 'delete'}</button>
+              </div>
             </li>
-          ))}
-        </ul>
-      )}
-      {fetchingStatus === "loading" && <div>Loading...</div>}
-    </>
+          ))
+        )}
+      </ul>
+      {}
+      {!fetching && !todos.length && <div>there is no tasks yet</div>}
+    </div>
   );
 };
 export default Todo;
